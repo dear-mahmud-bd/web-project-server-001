@@ -18,6 +18,7 @@ async function run() {
     try {
         await client.connect();
         const doctorsTimes = client.db("doctors_time").collection("times");
+        const bookingTimes = client.db("doctors_time").collection("bookings");
 
         app.get('/times', async (req, res) => {
             const query = {};
@@ -26,7 +27,43 @@ async function run() {
             res.send(result);
         });
 
+        //available apointpent ...
+        app.get('/available', async (req, res) => {
+            const date = req.query.date;
+
+            // (1) get all times ...
+            const times = await doctorsTimes.find().toArray();
+
+            // (2) get booking of that day ...
+            const query = { date: date };
+            const bookings = await bookingTimes.find(query).toArray();
+
+            // (3) for each time ...
+            times.forEach(service => {
+                // (4) find booking for that time ...
+                const timeBookings = bookings.filter(booking => booking.treatment === service.name);
+                // (5) select slots for timeBookings...
+                const booked = timeBookings.map(book => book.slot);
+                service.booked = booked;
+                // (6) select those which are not in booked slot ...
+                const available = service.slots.filter(slot => !booked.includes(slot));
+                service.slots = available;
+            })
+            res.send(times);
+        });
+
         // Adding or Creating ...
+        app.post('/booking', async (req, res) => {
+            const booking = req.body;
+            const query = { treatment: booking.treatment, date: booking.date, patient: booking.patient };
+            const exists = await bookingTimes.findOne(query);
+            if (exists) {
+                return res.send({ success: false, booking: exists });
+            } else {
+                const result = await bookingTimes.insertOne(booking);
+                return res.send({ success: true, result });
+            }
+        })
 
     } finally {
         // await client.close();
