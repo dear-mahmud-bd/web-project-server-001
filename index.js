@@ -27,7 +27,7 @@ async function run() {
             res.send(result);
         });
 
-        //available apointpent ...
+        // available apointpent ( Explore more:- MongoDB Agrregation )...
         app.get('/available', async (req, res) => {
             const date = req.query.date;
 
@@ -63,6 +63,15 @@ async function run() {
                 const result = await bookingTimes.insertOne(booking);
                 return res.send({ success: true, result });
             }
+        })
+
+        // LOAD / GET data ...
+        app.get('/booking', async (req, res) => {
+            const patient = req.query.patient;
+            // console.log(patient);
+            const query = { patient: patient };
+            const bookings = await bookingTimes.find(query).toArray();
+            res.send(bookings);
         })
 
     } finally {
