@@ -1,10 +1,11 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const nodemailer = require('nodemailer');
 const sgTransport = require('nodemailer-sendgrid-transport');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -81,6 +82,7 @@ async function run() {
         const bookingTimes = client.db("doctors_time").collection("bookings");
         const userTimes = client.db("doctors_time").collection("user");
         const doctorCollection = client.db("doctors_time").collection("doctors");
+        const paymentCollection = client.db("doctors_time").collection("payments");
 
         // verify admin ...
         const verifyAdmin = async (req, res, next) => {
@@ -93,8 +95,26 @@ async function run() {
             }
         }
 
+        // Payment 
+        app.post("/create-payment-intent", verifyJWT, async (req, res) => {
+            const { price } = req.body;
+            // const service = req.body;
+            // const price = service.price;
+            const amount = price * 100;
+            // Create a PaymentIntent with the order amount and currency
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "inr",
+                payment_method_types: ['card']
+            });
+
+            res.send({ clientSecret: paymentIntent.client_secret });
+        });
+
+        // Get all free times for all services ...
         app.get('/times', async (req, res) => {
             const query = {};
+            // to find name using "project({ name: 1 })"...
             const cursor = doctorsTimes.find(query).project({ name: 1 });
             const result = await cursor.toArray();
             res.send(result);
@@ -189,6 +209,29 @@ async function run() {
             }
         })
 
+        // get data with a particuler id ...
+        app.get('/booking/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) };
+            const booking = await bookingTimes.findOne(query);
+            res.send(booking);
+        })
+
+        app.patch('/booking/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const payment = req.body;
+            const filter = { _id: ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    paid: true,
+                    transactionId: payment.transactionId
+                }
+            }
+            const result = await paymentCollection.insertOne(payment);
+            const updatedBooking = await bookingTimes.updateOne(filter, updatedDoc);
+            res.send(updatedDoc);
+        })
+
         // adding doctors ...
         app.post('/doctor', verifyJWT, verifyAdmin, async (req, res) => {
             const doctor = req.body;
@@ -218,7 +261,7 @@ run().catch(console.dir);
 
 
 app.get('/', (req, res) => {
-    res.send('Hello Server');
+    res.send('Server : কিরে তোর খবর কি?  Me : তোরে থাব্রামু ');
 });
 app.listen(port, () => {
     console.log("Listening on port");
